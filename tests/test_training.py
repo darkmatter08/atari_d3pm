@@ -59,7 +59,10 @@ def test_stage5_loader_uses_spawn_after_jax_expert_loading(tmp_path):
         policy_type="bc", horizon=1, num_workers=1, batch_size=2,
         checkpoint_stage=5,
     )
-    assert _loader(dataset, config, shuffle=True).multiprocessing_context.get_start_method() == "spawn"
+    training_loader = _loader(dataset, config, shuffle=True)
+    validation_loader = _loader(dataset, config, shuffle=False)
+    assert training_loader.multiprocessing_context.get_start_method() == "spawn"
+    assert validation_loader.num_workers == 0
 
 
 def test_behavior_cloning_training_saves_loadable_checkpoint(tmp_path):

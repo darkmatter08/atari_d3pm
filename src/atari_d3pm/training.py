@@ -122,20 +122,26 @@ def _loader(
     persistent_workers: bool | None = None,
 ) -> DataLoader:
     generator = torch.Generator().manual_seed(config.seed)
+    loader_workers = config.num_workers
+    if config.checkpoint_stage >= 5 and not shuffle:
+        # Validation is small enough to load in-process. Avoid repeatedly
+        # spawning fresh workers at every validation checkpoint after JAX has
+        # been initialized by DAgger collection.
+        loader_workers = 0
     if persistent_workers is None:
         persistent_workers = shuffle
     # Stage 5 may load the multithreaded JAX expert before training. Forking
     # workers afterward is unsafe, so use clean spawned processes there.
     multiprocessing_context = (
-        "spawn" if config.num_workers > 0 and config.checkpoint_stage >= 5 else None
+        "spawn" if loader_workers > 0 and config.checkpoint_stage >= 5 else None
     )
     return DataLoader(
         dataset,
         batch_size=config.batch_size,
         shuffle=shuffle,
-        num_workers=config.num_workers,
+        num_workers=loader_workers,
         pin_memory=torch.cuda.is_available(),
-        persistent_workers=config.num_workers > 0 and persistent_workers,
+        persistent_workers=loader_workers > 0 and persistent_workers,
         drop_last=shuffle,
         generator=generator,
         multiprocessing_context=multiprocessing_context,
