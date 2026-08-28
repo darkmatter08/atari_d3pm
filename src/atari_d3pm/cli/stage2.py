@@ -13,6 +13,7 @@ from atari_d3pm.eda import run_eda
 from atari_d3pm.expert import CleanRLPongExpert, download_expert, make_expert_env
 from atari_d3pm.stage2_data import (
     CollectionSpec,
+    audit_episode_replay,
     collect_episode,
     episode_manifest,
     episode_path,
@@ -175,6 +176,23 @@ def main() -> None:
         )
 
     metadata = finalize_dataset(args.output, spec, verification)
+    replay_audits = []
+    if spec.policy_mode == "deterministic":
+        for split in spec.seeds():
+            item = next(item for item in manifest if item["split"] == split)
+            audit = audit_episode_replay(
+                expert,
+                episode_path(args.output, item["episode_id"]),
+                args.max_steps,
+            )
+            replay_audits.append(audit)
+            print(
+                f"replay audit split={split} seed={audit['seed']} "
+                f"steps={audit['steps_checked']} exact_match=True",
+                flush=True,
+            )
+    replay_path = args.report / "replay_audit.json"
+    replay_path.write_text(json.dumps(replay_audits, indent=2) + "\n")
     eda = run_eda(args.output, args.report)
     stage_summary = {
         "stage": 2,
@@ -184,6 +202,7 @@ def main() -> None:
         "num_steps": metadata["num_steps"],
         "split_returns": eda["split_episode_returns"],
         "expert_verification": verification,
+        "replay_audits": replay_audits,
     }
     (args.report / "summary.json").write_text(json.dumps(stage_summary, indent=2) + "\n")
     print(

@@ -149,6 +149,58 @@ def load_episode(path: str | Path) -> tuple[dict[str, np.ndarray], dict]:
     return arrays, metadata
 
 
+def audit_episode_replay(
+    expert,
+    path: str | Path,
+    max_steps: int,
+    env_factory: Callable = make_expert_env,
+    raw_frame_reader: Callable = current_rgb_frame,
+) -> dict:
+    """Replay a deterministic episode and require exact decision alignment."""
+    expected, metadata = load_episode(path)
+    if metadata["policy_mode"] != "deterministic":
+        raise ValueError("Exact replay audit is only defined for deterministic experts")
+    env = env_factory()
+    observation, _ = env.reset(seed=int(metadata["seed"]))
+    checked = 0
+    try:
+        for index in range(min(len(expected["actions"]), max_steps)):
+            frame = preprocess_frame(raw_frame_reader(env))
+            action = expert.action(np.asarray(observation))
+            if not np.array_equal(frame, expected["frames"][index]):
+                raise RuntimeError(f"Replay frame mismatch at step {index}: {path}")
+            if action != int(expected["actions"][index]):
+                raise RuntimeError(f"Replay action mismatch at step {index}: {path}")
+            observation, reward, terminated, truncated, _ = env.step(action)
+            actual = (float(reward), bool(terminated), bool(truncated))
+            wanted = (
+                float(expected["rewards"][index]),
+                bool(expected["terminations"][index]),
+                bool(expected["truncations"][index]),
+            )
+            if actual != wanted:
+                raise RuntimeError(
+                    f"Replay transition mismatch at step {index}: {actual} != {wanted}"
+                )
+            checked += 1
+            if terminated or truncated:
+                break
+    finally:
+        env.close()
+    if checked != len(expected["actions"]):
+        raise RuntimeError(
+            f"Replay length mismatch for {path}: {checked} != {len(expected['actions'])}"
+        )
+    return {
+        "episode_id": metadata["episode_id"],
+        "split": metadata["split"],
+        "seed": metadata["seed"],
+        "steps_checked": checked,
+        "return": float(expected["rewards"].sum()),
+        "exact_match": True,
+    }
+
+
 def finalize_dataset(
     root: str | Path,
     spec: CollectionSpec,

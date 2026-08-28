@@ -5,11 +5,40 @@ import numpy as np
 from atari_d3pm.data import PongActionChunkDataset
 from atari_d3pm.stage2_data import (
     CollectionSpec,
+    audit_episode_replay,
+    collect_episode,
     episode_manifest,
     episode_path,
     finalize_dataset,
     save_episode,
 )
+
+
+class _FakeExpert:
+    def action(self, observation):
+        return int(observation[0, 0, 0] % 6)
+
+
+class _FakeEnv:
+    def __init__(self):
+        self.index = 0
+
+    def reset(self, seed):
+        self.index = 0
+        return np.zeros((4, 84, 84), dtype=np.uint8), {}
+
+    def step(self, action):
+        self.index += 1
+        observation = np.full((4, 84, 84), self.index, dtype=np.uint8)
+        terminated = self.index == 3
+        return observation, float(terminated), terminated, False, {}
+
+    def close(self):
+        pass
+
+
+def _fake_raw_frame(env):
+    return np.full((210, 160, 3), env.index, dtype=np.uint8)
 
 
 def _episode_arrays(value: int) -> dict[str, np.ndarray]:
@@ -68,3 +97,35 @@ def test_finalize_stage2_dataset_is_loadable_for_all_splits(tmp_path):
     assert len(PongActionChunkDataset(tmp_path, "train", horizon=2)) == 4
     assert len(PongActionChunkDataset(tmp_path, "validation", horizon=2)) == 2
     assert len(PongActionChunkDataset(tmp_path, "test", horizon=2)) == 2
+
+
+def test_collected_episode_passes_exact_replay_audit(tmp_path):
+    arrays = collect_episode(
+        _FakeExpert(),
+        seed=123,
+        max_steps=10,
+        env_factory=_FakeEnv,
+        raw_frame_reader=_fake_raw_frame,
+    )
+    path = tmp_path / "episode.npz"
+    save_episode(
+        path,
+        arrays,
+        {
+            "episode_id": 0,
+            "split": "train",
+            "seed": 123,
+            "policy_mode": "deterministic",
+        },
+    )
+
+    result = audit_episode_replay(
+        _FakeExpert(),
+        path,
+        max_steps=10,
+        env_factory=_FakeEnv,
+        raw_frame_reader=_fake_raw_frame,
+    )
+
+    assert result["exact_match"] is True
+    assert result["steps_checked"] == 3
