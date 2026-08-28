@@ -98,7 +98,15 @@ def evaluate_random_policy(
         env.close()
         returns.append(episode_return)
         lengths.append(length)
-    return _summary(returns, lengths, inference_seconds=0.0)
+    summary = _summary(returns, lengths, inference_seconds=0.0)
+    summary.update(
+        {
+            "policy_type": "random",
+            "seeds": [int(seed) for seed in seeds],
+            "max_steps": max_steps,
+        }
+    )
+    return summary
 
 
 def evaluate_checkpoint(
@@ -165,6 +173,7 @@ def evaluate_checkpoint(
             "horizon": config.horizon,
             "device": str(device),
             "seeds": [int(seed) for seed in seeds],
+            "max_steps": max_steps,
         }
     )
     return summary

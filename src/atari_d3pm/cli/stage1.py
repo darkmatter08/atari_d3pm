@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--eval-episodes", type=int, default=20)
     parser.add_argument("--eval-seed-base", type=int, default=10_000)
+    parser.add_argument("--max-eval-steps", type=int, default=27_000)
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
@@ -43,6 +45,12 @@ def _train_or_load(config: TrainConfig, force: bool) -> dict:
     summary_path = Path(config.output_dir) / "training_summary.json"
     checkpoint_path = Path(config.output_dir) / "best.pt"
     if not force and summary_path.exists() and checkpoint_path.exists():
+        saved_config = json.loads((Path(config.output_dir) / "config.json").read_text())
+        if saved_config != asdict(config):
+            raise RuntimeError(
+                f"Run {config.output_dir} has a different configuration; "
+                "choose another --output or pass --force"
+            )
         print(f"Using completed run {config.output_dir}", flush=True)
         return json.loads(summary_path.read_text())
     return train_policy(config)
@@ -51,6 +59,8 @@ def _train_or_load(config: TrainConfig, force: bool) -> dict:
 def main() -> None:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.eval_episodes < 1 or args.max_eval_steps < 1:
+        raise ValueError("eval-episodes and max-eval-steps must be positive")
     seeds = list(range(args.eval_seed_base, args.eval_seed_base + args.eval_episodes))
 
     train_dataset = PongActionChunkDataset(args.data, split="train", horizon=1)
@@ -62,10 +72,17 @@ def main() -> None:
     random_path = args.output / "random_online.json"
     if args.force or not random_path.exists():
         print("Evaluating random-policy baseline", flush=True)
-        random_online = evaluate_random_policy(seeds)
+        random_online = evaluate_random_policy(seeds, max_steps=args.max_eval_steps)
         write_rollout_summary(random_path, random_online)
     else:
         random_online = json.loads(random_path.read_text())
+        if random_online.get("seeds") != seeds or random_online.get(
+            "max_steps"
+        ) != args.max_eval_steps:
+            raise RuntimeError(
+                f"{random_path} used different evaluation settings; "
+                "choose another --output or pass --force"
+            )
 
     run_specs = [("bc", 1)] + [("d3pm", horizon) for horizon in args.horizons]
     results = []
@@ -94,11 +111,21 @@ def main() -> None:
         if args.force or not online_path.exists():
             print(f"Evaluating {name} online", flush=True)
             online = evaluate_checkpoint(
-                run_dir / "best.pt", seeds=seeds, device_name=args.device
+                run_dir / "best.pt",
+                seeds=seeds,
+                device_name=args.device,
+                max_steps=args.max_eval_steps,
             )
             write_rollout_summary(online_path, online)
         else:
             online = json.loads(online_path.read_text())
+            if online.get("seeds") != seeds or online.get(
+                "max_steps"
+            ) != args.max_eval_steps:
+                raise RuntimeError(
+                    f"{online_path} used different evaluation settings; "
+                    "choose another --output or pass --force"
+                )
         results.append({"name": name, "training": training, "online": online})
 
     bc_result = next(result for result in results if result["name"] == "bc_h1")
@@ -109,6 +136,7 @@ def main() -> None:
         "data": str(args.data),
         "seed": args.seed,
         "evaluation_seeds": seeds,
+        "max_evaluation_steps": args.max_eval_steps,
         "majority_action_accuracy": majority_accuracy,
         "random_online": random_online,
         "results": results,

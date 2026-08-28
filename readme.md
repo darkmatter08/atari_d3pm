@@ -41,10 +41,12 @@ For a shorter pipeline check before the full run:
 
 ```bash
 .venv/bin/atari-d3pm-stage1 \
+  --output runs/stage1_smoke \
   --horizons 1 4 \
   --train-steps 10 \
   --validation-every 5 \
-  --eval-episodes 2
+  --eval-episodes 2 \
+  --max-eval-steps 200
 ```
 
 
