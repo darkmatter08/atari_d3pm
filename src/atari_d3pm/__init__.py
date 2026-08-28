@@ -2,6 +2,12 @@
 
 from .data import PongActionChunkDataset
 from .diffusion import D3PM
-from .model import PongActionDenoiser
+from .model import PongActionDenoiser, PongBehaviorCloner, PongVisionEncoder
 
-__all__ = ["D3PM", "PongActionChunkDataset", "PongActionDenoiser"]
+__all__ = [
+    "D3PM",
+    "PongActionChunkDataset",
+    "PongActionDenoiser",
+    "PongBehaviorCloner",
+    "PongVisionEncoder",
+]

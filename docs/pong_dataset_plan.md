@@ -302,6 +302,15 @@ and at least one learned policy must achieve meaningfully better online return
 than a random policy. If it does not, debug data coverage/modeling before
 collecting a larger dataset.
 
+**Implementation:** `atari-d3pm-stage1` runs the complete pilot. Each run writes
+its resolved configuration, append-only validation metrics, best/last
+checkpoints, a training summary, and online returns beneath `runs/stage1/`.
+The default training budget is 3,000 optimizer updates per policy, with
+validation every 250 updates. The CLI exposes `--horizons`, so the chunk-length
+sweep does not require code changes. The rollout evaluator batches inference
+over the 20 environments while stepping each environment independently and
+replanning after every action.
+
 ### Stage 2: controlled expert-rollout dataset
 
 **When:** After the Minari pilot passes.
