@@ -8,10 +8,12 @@ import torch
 
 from atari_d3pm.training import (
     TrainConfig,
+    _loader,
     evaluate_checkpoint_offline,
     load_checkpoint,
     train_policy,
 )
+from atari_d3pm.data import PongActionChunkDataset
 
 
 def _write_tiny_dataset(root) -> None:
@@ -30,6 +32,16 @@ def _write_tiny_dataset(root) -> None:
 def test_train_config_rejects_non_one_step_bc():
     with pytest.raises(ValueError, match="must use H=1"):
         TrainConfig(policy_type="bc", horizon=4)
+
+
+def test_only_training_loader_keeps_workers_persistent(tmp_path):
+    _write_tiny_dataset(tmp_path)
+    dataset = PongActionChunkDataset(tmp_path, split="train", horizon=1)
+    config = TrainConfig(
+        policy_type="bc", horizon=1, num_workers=1, batch_size=2
+    )
+    assert _loader(dataset, config, shuffle=True).persistent_workers is True
+    assert _loader(dataset, config, shuffle=False).persistent_workers is False
 
 
 def test_behavior_cloning_training_saves_loadable_checkpoint(tmp_path):

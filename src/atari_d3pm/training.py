@@ -97,15 +97,22 @@ def build_policy(config: TrainConfig, device: torch.device):
     return model, diffusion
 
 
-def _loader(dataset, config: TrainConfig, shuffle: bool) -> DataLoader:
+def _loader(
+    dataset,
+    config: TrainConfig,
+    shuffle: bool,
+    persistent_workers: bool | None = None,
+) -> DataLoader:
     generator = torch.Generator().manual_seed(config.seed)
+    if persistent_workers is None:
+        persistent_workers = shuffle
     return DataLoader(
         dataset,
         batch_size=config.batch_size,
         shuffle=shuffle,
         num_workers=config.num_workers,
         pin_memory=torch.cuda.is_available(),
-        persistent_workers=config.num_workers > 0,
+        persistent_workers=config.num_workers > 0 and persistent_workers,
         drop_last=shuffle,
         generator=generator,
     )
