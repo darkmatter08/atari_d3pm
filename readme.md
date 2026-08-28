@@ -21,11 +21,12 @@ Use Python 3.10-3.13 (3.12 is tested):
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[data,dev]'
+.venv/bin/python -m pip install -e '.[data,dev,expert]'
 .venv/bin/atari-d3pm-prepare-pong
 .venv/bin/python -m pytest
 .venv/bin/atari-d3pm-stage0
 .venv/bin/atari-d3pm-stage1
+.venv/bin/atari-d3pm-stage2
 ```
 
 The preparation command downloads Minari `atari/pong/expert-v0`, validates and
@@ -38,6 +39,12 @@ checkpoints using the two held-out validation episodes, then evaluates every
 policy on the same 20 fixed online Pong seeds with one-action execution (`E=1`).
 Outputs are written beneath `runs/stage1/`; generated data, checkpoints, and
 reports are intentionally excluded from Git.
+
+Stage 2 downloads and verifies the immutable CleanRL Pong expert, checks its
+return on 20 fixed seeds, and collects the controlled 100/10/20 episode dataset
+at `data/pong/v2`. Collection is resumable at episode boundaries. The completed
+dataset and audit are documented in
+[docs/stage2_results.md](docs/stage2_results.md).
 
 For a shorter pipeline check before the full run:
 

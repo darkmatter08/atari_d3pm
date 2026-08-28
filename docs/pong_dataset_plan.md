@@ -316,6 +316,9 @@ replanning after every action.
 
 ### Stage 2: controlled expert-rollout dataset
 
+**Status:** Completed on 2026-08-28. See
+[`stage2_results.md`](stage2_results.md).
+
 **When:** After the Minari pilot passes.
 
 **Data collection:** Use one verified expert checkpoint with one frozen wrapper
