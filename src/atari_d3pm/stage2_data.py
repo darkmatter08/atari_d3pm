@@ -1,7 +1,8 @@
-"""Resumable expert rollout collection and v2 dataset finalization."""
+"""Resumable expert rollout collection and dataset finalization."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -30,7 +31,8 @@ class CollectionSpec:
     train_seed_base: int = 30_000
     validation_seed_base: int = 40_000
     test_seed_base: int = 50_000
-    policy_mode: str = "deterministic"
+    expert_seed_offset: int = 1_000_000
+    policy_mode: str = "stochastic"
     max_steps: int = 27_000
 
     def __post_init__(self) -> None:
@@ -44,6 +46,9 @@ class CollectionSpec:
         all_seeds = [seed for seeds in self.seeds().values() for seed in seeds]
         if len(all_seeds) != len(set(all_seeds)):
             raise ValueError("Collection seeds must be disjoint across splits")
+        expert_seeds = [seed + self.expert_seed_offset for seed in all_seeds]
+        if len(expert_seeds) != len(set(expert_seeds)):
+            raise ValueError("Expert seeds must be disjoint across splits")
 
     def seeds(self) -> dict[str, list[int]]:
         return {
@@ -67,7 +72,14 @@ def episode_manifest(spec: CollectionSpec) -> list[dict]:
     episode_id = 0
     for split, seeds in spec.seeds().items():
         for seed in seeds:
-            manifest.append({"episode_id": episode_id, "split": split, "seed": seed})
+            manifest.append(
+                {
+                    "episode_id": episode_id,
+                    "split": split,
+                    "seed": seed,
+                    "expert_seed": seed + spec.expert_seed_offset,
+                }
+            )
             episode_id += 1
     return manifest
 
@@ -79,10 +91,12 @@ def episode_path(root: str | Path, episode_id: int) -> Path:
 def collect_episode(
     expert,
     seed: int,
+    expert_seed: int,
     max_steps: int,
     env_factory: Callable = make_expert_env,
     raw_frame_reader: Callable = current_rgb_frame,
 ) -> dict[str, np.ndarray]:
+    expert.reset(expert_seed)
     env = env_factory()
     observation, _ = env.reset(seed=int(seed))
     frames = []
@@ -156,10 +170,9 @@ def audit_episode_replay(
     env_factory: Callable = make_expert_env,
     raw_frame_reader: Callable = current_rgb_frame,
 ) -> dict:
-    """Replay a deterministic episode and require exact decision alignment."""
+    """Replay an episode and require exact environment and policy alignment."""
     expected, metadata = load_episode(path)
-    if metadata["policy_mode"] != "deterministic":
-        raise ValueError("Exact replay audit is only defined for deterministic experts")
+    expert.reset(int(metadata["expert_seed"]))
     env = env_factory()
     observation, _ = env.reset(seed=int(metadata["seed"]))
     checked = 0
@@ -195,6 +208,7 @@ def audit_episode_replay(
         "episode_id": metadata["episode_id"],
         "split": metadata["split"],
         "seed": metadata["seed"],
+        "expert_seed": metadata["expert_seed"],
         "steps_checked": checked,
         "return": float(expected["rewards"].sum()),
         "exact_match": True,
@@ -213,7 +227,7 @@ def finalize_dataset(
     returns = []
     for expected in manifest:
         arrays, metadata = load_episode(episode_path(root, expected["episode_id"]))
-        for key in ("episode_id", "split", "seed"):
+        for key in ("episode_id", "split", "seed", "expert_seed"):
             if metadata[key] != expected[key]:
                 raise RuntimeError(
                     f"Episode {expected['episode_id']} metadata mismatch for {key}"
@@ -249,7 +263,7 @@ def finalize_dataset(
     (root / "splits.json").write_text(json.dumps(splits, indent=2) + "\n")
     metadata = {
         "format_version": 2,
-        "dataset_id": "atari/pong/cleanrl-expert-v1",
+        "dataset_id": f"atari/pong/cleanrl-{spec.policy_mode}-expert-v1",
         "num_episodes": len(manifest),
         "num_steps": total,
         "episode_ids": [item["episode_id"] for item in manifest],
@@ -292,3 +306,42 @@ def finalize_dataset(
     }
     (root / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     return metadata
+
+
+def trajectory_digest(arrays: Mapping[str, np.ndarray]) -> str:
+    digest = hashlib.sha256()
+    for key in ("frames", "actions", "rewards", "terminations", "truncations"):
+        digest.update(np.ascontiguousarray(arrays[key]).tobytes())
+    return digest.hexdigest()
+
+
+def audit_trajectory_uniqueness(root: str | Path, spec: CollectionSpec) -> dict:
+    """Measure exact duplicates and overlap between dataset splits."""
+    root = Path(root)
+    hashes: dict[str, list[str]] = {split: [] for split in spec.seeds()}
+    for item in episode_manifest(spec):
+        arrays, _ = load_episode(episode_path(root, item["episode_id"]))
+        hashes[item["split"]].append(trajectory_digest(arrays))
+
+    unique = {split: set(values) for split, values in hashes.items()}
+    per_split = {
+        split: {
+            "episodes": len(values),
+            "unique_trajectories": len(unique[split]),
+            "unique_fraction": len(unique[split]) / len(values),
+        }
+        for split, values in hashes.items()
+    }
+    overlaps = {}
+    split_names = list(hashes)
+    for left_index, left in enumerate(split_names):
+        for right in split_names[left_index + 1 :]:
+            overlaps[f"{left}__{right}"] = len(unique[left].intersection(unique[right]))
+    all_hashes = [value for values in hashes.values() for value in values]
+    return {
+        "episodes": len(all_hashes),
+        "unique_trajectories": len(set(all_hashes)),
+        "unique_fraction": len(set(all_hashes)) / len(all_hashes),
+        "per_split": per_split,
+        "cross_split_exact_overlaps": overlaps,
+    }

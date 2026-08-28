@@ -196,11 +196,22 @@ class CleanRLPongExpert:
             features = network.apply(network_params, observations)
             return actor.apply(actor_params, features)
 
+        def sample(observations, key):
+            values = logits(observations)
+            key, subkey = jax.random.split(key)
+            actions = jax.random.categorical(subkey, values, axis=-1)
+            return actions, key
+
         self._jax = jax
         self._jnp = jnp
         self._logits = jax.jit(logits)
+        self._sample = jax.jit(sample)
         self._key = jax.random.PRNGKey(1)
         self.mode = mode
+
+    def reset(self, seed: int) -> None:
+        """Reset the episode-scoped policy RNG for reproducible collection."""
+        self._key = self._jax.random.PRNGKey(int(seed))
 
     def actions(self, observations: np.ndarray) -> np.ndarray:
         observations = np.asarray(observations, dtype=np.uint8)
@@ -208,12 +219,11 @@ class CleanRLPongExpert:
             observations = observations[None]
         if observations.ndim != 4 or observations.shape[1:] != (4, 84, 84):
             raise ValueError(f"Expected [B, 4, 84, 84], got {observations.shape}")
-        logits = self._logits(observations)
         if self.mode == "deterministic":
+            logits = self._logits(observations)
             result = self._jnp.argmax(logits, axis=-1)
         else:
-            self._key, subkey = self._jax.random.split(self._key)
-            result = self._jax.random.categorical(subkey, logits, axis=-1)
+            result, self._key = self._sample(observations, self._key)
         return np.asarray(result, dtype=np.int64)
 
     def action(self, observation: np.ndarray) -> int:

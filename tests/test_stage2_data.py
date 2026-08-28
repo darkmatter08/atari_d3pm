@@ -6,6 +6,7 @@ from atari_d3pm.data import PongActionChunkDataset
 from atari_d3pm.stage2_data import (
     CollectionSpec,
     audit_episode_replay,
+    audit_trajectory_uniqueness,
     collect_episode,
     episode_manifest,
     episode_path,
@@ -15,6 +16,9 @@ from atari_d3pm.stage2_data import (
 
 
 class _FakeExpert:
+    def reset(self, seed):
+        self.seed = seed
+
     def action(self, observation):
         return int(observation[0, 0, 0] % 6)
 
@@ -70,6 +74,12 @@ def test_collection_manifest_has_disjoint_fixed_splits():
         "test",
     ]
     assert [item["seed"] for item in manifest] == [100, 101, 200, 300]
+    assert [item["expert_seed"] for item in manifest] == [
+        1_000_100,
+        1_000_101,
+        1_000_200,
+        1_000_300,
+    ]
 
 
 def test_finalize_stage2_dataset_is_loadable_for_all_splits(tmp_path):
@@ -80,6 +90,7 @@ def test_finalize_stage2_dataset_is_loadable_for_all_splits(tmp_path):
         train_seed_base=100,
         validation_seed_base=200,
         test_seed_base=300,
+        policy_mode="deterministic",
     )
     manifest = episode_manifest(spec)
     for item in manifest:
@@ -91,18 +102,24 @@ def test_finalize_stage2_dataset_is_loadable_for_all_splits(tmp_path):
         )
 
     metadata = finalize_dataset(tmp_path, spec, verification={"passed": True})
+    uniqueness = audit_trajectory_uniqueness(tmp_path, spec)
 
     assert metadata["num_episodes"] == 4
     assert metadata["num_steps"] == 12
     assert len(PongActionChunkDataset(tmp_path, "train", horizon=2)) == 4
     assert len(PongActionChunkDataset(tmp_path, "validation", horizon=2)) == 2
     assert len(PongActionChunkDataset(tmp_path, "test", horizon=2)) == 2
+    assert uniqueness["unique_trajectories"] == 4
+    assert all(
+        overlap == 0 for overlap in uniqueness["cross_split_exact_overlaps"].values()
+    )
 
 
 def test_collected_episode_passes_exact_replay_audit(tmp_path):
     arrays = collect_episode(
         _FakeExpert(),
         seed=123,
+        expert_seed=456,
         max_steps=10,
         env_factory=_FakeEnv,
         raw_frame_reader=_fake_raw_frame,
@@ -115,6 +132,7 @@ def test_collected_episode_passes_exact_replay_audit(tmp_path):
             "episode_id": 0,
             "split": "train",
             "seed": 123,
+            "expert_seed": 456,
             "policy_mode": "deterministic",
         },
     )
@@ -128,4 +146,5 @@ def test_collected_episode_passes_exact_replay_audit(tmp_path):
     )
 
     assert result["exact_match"] is True
+    assert result["expert_seed"] == 456
     assert result["steps_checked"] == 3
