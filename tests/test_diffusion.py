@@ -33,3 +33,17 @@ def test_final_forward_distribution_is_nearly_uniform():
     final = diffusion.q_mats[-1]
     expected = torch.full_like(final, 1 / 6)
     assert torch.allclose(final, expected, atol=2e-3)
+
+
+def test_seeded_sampling_is_reproducible_without_mutating_global_rng():
+    diffusion = D3PM(TinyDenoiser(6), n_steps=4, num_classes=6)
+    condition = torch.zeros(3, 4, 84, 84, dtype=torch.uint8)
+    state = torch.random.get_rng_state()
+    first = diffusion.sample(
+        condition, horizon=5, generator=torch.Generator().manual_seed(123)
+    )
+    assert torch.equal(torch.random.get_rng_state(), state)
+    second = diffusion.sample(
+        condition, horizon=5, generator=torch.Generator().manual_seed(123)
+    )
+    assert torch.equal(first, second)

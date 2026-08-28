@@ -45,7 +45,10 @@ def _train_or_load(config: TrainConfig, force: bool) -> dict:
     summary_path = Path(config.output_dir) / "training_summary.json"
     checkpoint_path = Path(config.output_dir) / "best.pt"
     if not force and summary_path.exists() and checkpoint_path.exists():
-        saved_config = json.loads((Path(config.output_dir) / "config.json").read_text())
+        saved_values = json.loads(
+            (Path(config.output_dir) / "config.json").read_text()
+        )
+        saved_config = asdict(TrainConfig(**saved_values))
         if saved_config != asdict(config):
             raise RuntimeError(
                 f"Run {config.output_dir} has a different configuration; "

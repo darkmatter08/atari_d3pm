@@ -27,6 +27,7 @@ python3.12 -m venv .venv
 .venv/bin/atari-d3pm-stage0
 .venv/bin/atari-d3pm-stage1
 .venv/bin/atari-d3pm-stage2
+.venv/bin/atari-d3pm-stage3
 ```
 
 The preparation command downloads Minari `atari/pong/expert-v0`, validates and
@@ -48,6 +49,12 @@ uniqueness and zero exact overlap between splits. The earlier deterministic
 `v2` dataset is retained only as a debugging ablation because its trajectories
 repeat across seeds. The completed dataset and audit are documented in
 [docs/stage2_results.md](docs/stage2_results.md).
+
+Stage 3 trains three seeds of the BC baseline and each D3PM horizon in
+`H = {1, 2, 4, 8, 16, 32, 64}`. All checkpoint selection finishes on the
+validation split before the runner evaluates any checkpoint on the offline test
+split. Its H100-oriented defaults use batch size 1,024 and 16 loader workers;
+both remain command-line parameters.
 
 For a shorter pipeline check before the full run:
 

@@ -47,14 +47,18 @@ def _policy_actions(
 ) -> np.ndarray:
     frames = frames.to(device, non_blocking=True)
     use_amp = device.type == "cuda" and torch.cuda.is_bf16_supported()
-    torch.manual_seed(sample_seed)
+    generator = torch.Generator(device=device).manual_seed(sample_seed)
     with torch.autocast(
         device_type=device.type, dtype=torch.bfloat16, enabled=use_amp
     ):
         if policy_type == "bc":
             actions = model(frames).argmax(dim=-1)
         else:
-            chunks = diffusion.sample(frames, horizon=horizon)
+            chunks = diffusion.sample(
+                frames,
+                horizon=horizon,
+                generator=generator,
+            )
             actions = chunks[:, 0]
     return actions.cpu().numpy()
 

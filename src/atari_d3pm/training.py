@@ -38,6 +38,9 @@ class TrainConfig:
     n_layers: int = 3
     n_heads: int = 4
     num_workers: int = 4
+    sample_stride: int = 1
+    validation_max_batches: int | None = None
+    checkpoint_stage: int = 1
     seed: int = 0
     device: str = "auto"
 
@@ -50,6 +53,10 @@ class TrainConfig:
             raise ValueError("train_steps and validation_every must be positive")
         if self.batch_size < 1 or self.num_workers < 0:
             raise ValueError("batch_size must be positive and num_workers non-negative")
+        if self.sample_stride < 1:
+            raise ValueError("sample_stride must be positive")
+        if self.validation_max_batches is not None and self.validation_max_batches < 1:
+            raise ValueError("validation_max_batches must be positive when set")
 
 
 def choose_device(requested: str) -> torch.device:
@@ -124,6 +131,7 @@ def validate(
     loader: DataLoader,
     config: TrainConfig,
     device: torch.device,
+    max_batches: int | None = None,
 ) -> dict[str, float]:
     model.eval()
     total_tokens = 0
@@ -135,6 +143,8 @@ def validate(
     total_ce = 0.0
 
     for batch_index, batch in enumerate(loader):
+        if max_batches is not None and batch_index >= max_batches:
+            break
         frames, actions = _move_batch(batch, device)
         if config.policy_type == "bc":
             logits = model(frames)
@@ -150,10 +160,14 @@ def validate(
         t = torch.full(
             (batch_size,), diffusion.n_steps, device=device, dtype=torch.long
         )
-        generator = torch.Generator(device="cpu").manual_seed(config.seed + batch_index)
+        generator = torch.Generator(device=device).manual_seed(
+            config.seed + batch_index
+        )
         noise = torch.rand(
-            (*actions.shape, diffusion.num_classes), generator=generator
-        ).to(device)
+            (*actions.shape, diffusion.num_classes),
+            device=device,
+            generator=generator,
+        )
         noisy = diffusion.q_sample(actions, t, noise=noise)
         logits = model(noisy, t, frames)
         total_ce += float(
@@ -163,8 +177,14 @@ def validate(
         denoise_correct += int((denoised == actions).sum().cpu())
         denoise_first_correct += int((denoised[:, 0] == actions[:, 0]).sum().cpu())
 
-        torch.manual_seed(config.seed + batch_index)
-        sampled = diffusion.sample(frames, horizon=config.horizon)
+        sample_generator = torch.Generator(device=device).manual_seed(
+            config.seed + 10_000_000 + batch_index
+        )
+        sampled = diffusion.sample(
+            frames,
+            horizon=config.horizon,
+            generator=sample_generator,
+        )
         sample_correct += int((sampled == actions).sum().cpu())
         sample_first_correct += int((sampled[:, 0] == actions[:, 0]).sum().cpu())
         total_tokens += actions.numel()
@@ -174,6 +194,7 @@ def validate(
         return {
             "ce": total_ce / total_first,
             "first_action_accuracy": denoise_first_correct / total_first,
+            "evaluated_windows": total_first,
         }
     return {
         "ce_at_max_noise": total_ce / total_tokens,
@@ -181,6 +202,7 @@ def validate(
         "denoise_first_action_accuracy": denoise_first_correct / total_first,
         "sample_token_accuracy": sample_correct / total_tokens,
         "sample_first_action_accuracy": sample_first_correct / total_first,
+        "evaluated_windows": total_first,
     }
 
 
@@ -201,7 +223,7 @@ def save_checkpoint(
     torch.save(
         {
             "format_version": 1,
-            "stage": 1,
+            "stage": config.checkpoint_stage,
             "config": asdict(config),
             "step": step,
             "metrics": metrics,
@@ -222,10 +244,16 @@ def train_policy(config: TrainConfig) -> dict:
     metrics_path.unlink(missing_ok=True)
 
     train_data = PongActionChunkDataset(
-        config.data_root, split="train", horizon=config.horizon
+        config.data_root,
+        split="train",
+        horizon=config.horizon,
+        sample_stride=config.sample_stride,
     )
     validation_data = PongActionChunkDataset(
-        config.data_root, split="validation", horizon=config.horizon
+        config.data_root,
+        split="validation",
+        horizon=config.horizon,
+        sample_stride=config.sample_stride,
     )
     train_loader = _loader(train_data, config, shuffle=True)
     validation_loader = _loader(validation_data, config, shuffle=False)
@@ -272,7 +300,14 @@ def train_policy(config: TrainConfig) -> dict:
             or step == config.train_steps
         )
         if should_validate:
-            metrics = validate(model, diffusion, validation_loader, config, device)
+            metrics = validate(
+                model,
+                diffusion,
+                validation_loader,
+                config,
+                device,
+                max_batches=config.validation_max_batches,
+            )
             score = checkpoint_score(metrics, config.policy_type)
             row = {"step": step, "train_loss": float(loss.detach().cpu()), **metrics}
             history.append(row)
@@ -309,3 +344,37 @@ def load_checkpoint(path: str | Path, device: torch.device):
     if diffusion is not None:
         diffusion.eval()
     return config, model, diffusion, checkpoint
+
+
+@torch.no_grad()
+def evaluate_checkpoint_offline(
+    path: str | Path,
+    split: str = "test",
+    device_name: str = "auto",
+    max_batches: int | None = None,
+) -> dict:
+    """Evaluate a frozen checkpoint on one offline split."""
+    device = choose_device(device_name)
+    config, model, diffusion, checkpoint = load_checkpoint(path, device)
+    dataset = PongActionChunkDataset(
+        config.data_root,
+        split=split,
+        horizon=config.horizon,
+        sample_stride=config.sample_stride,
+    )
+    loader = _loader(dataset, config, shuffle=False)
+    metrics = validate(
+        model,
+        diffusion,
+        loader,
+        config,
+        device,
+        max_batches=max_batches,
+    )
+    return {
+        "checkpoint": str(path),
+        "checkpoint_step": int(checkpoint["step"]),
+        "split": split,
+        "split_windows": len(dataset),
+        "metrics": metrics,
+    }

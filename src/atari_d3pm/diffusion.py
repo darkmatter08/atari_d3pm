@@ -150,23 +150,37 @@ class D3PM(nn.Module):
         t: torch.Tensor,
         condition: torch.Tensor,
         noise: torch.Tensor | None = None,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         x0_logits = self.x0_model(xt, t, condition)
         posterior = self.q_posterior_logits(x0_logits, xt, t)
         if noise is None:
-            noise = torch.rand_like(posterior)
+            noise = torch.rand(
+                posterior.shape,
+                dtype=posterior.dtype,
+                device=posterior.device,
+                generator=generator,
+            )
         noise = noise.clamp(self.eps, 1.0)
         gumbel = -torch.log(-torch.log(noise))
         not_first = self._broadcast_t(t != 1, xt.ndim + 1)
         return torch.argmax(posterior + gumbel * not_first, dim=-1)
 
     @torch.no_grad()
-    def sample(self, condition: torch.Tensor, horizon: int) -> torch.Tensor:
+    def sample(
+        self,
+        condition: torch.Tensor,
+        horizon: int,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
         batch = condition.shape[0]
         x = torch.randint(
-            self.num_classes, (batch, horizon), device=condition.device
+            self.num_classes,
+            (batch, horizon),
+            device=condition.device,
+            generator=generator,
         )
         for step in range(self.n_steps, 0, -1):
             t = torch.full((batch,), step, device=x.device, dtype=torch.long)
-            x = self.p_sample(x, t, condition)
+            x = self.p_sample(x, t, condition, generator=generator)
         return x

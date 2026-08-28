@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 import torch
 
-from atari_d3pm.training import TrainConfig, load_checkpoint, train_policy
+from atari_d3pm.training import (
+    TrainConfig,
+    evaluate_checkpoint_offline,
+    load_checkpoint,
+    train_policy,
+)
 
 
 def _write_tiny_dataset(root) -> None:
@@ -18,7 +23,7 @@ def _write_tiny_dataset(root) -> None:
     np.save(root / "episode_offsets.npy", np.asarray([0, 6, 12], dtype=np.int64))
     (root / "metadata.json").write_text(json.dumps({"episode_ids": [10, 11]}))
     (root / "splits.json").write_text(
-        json.dumps({"train": [10], "validation": [11]})
+        json.dumps({"train": [10], "validation": [11], "test": [11]})
     )
 
 
@@ -55,3 +60,9 @@ def test_behavior_cloning_training_saves_loadable_checkpoint(tmp_path):
     assert diffusion is None
     assert checkpoint["step"] == 1
     assert model(torch.zeros((1, 4, 84, 84), dtype=torch.uint8)).shape == (1, 6)
+
+    offline = evaluate_checkpoint_offline(
+        output / "best.pt", split="test", device_name="cpu"
+    )
+    assert offline["split_windows"] == 6
+    assert offline["metrics"]["evaluated_windows"] == 6

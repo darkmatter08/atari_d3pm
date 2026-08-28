@@ -373,6 +373,14 @@ Every horizon uses identical episode splits, preprocessing, vision encoder,
 transformer width/depth, diffusion schedule, batch size, number of gradient
 updates, and evaluation seeds. `H` is the intended primary independent variable.
 
+**Implementation:** `atari-d3pm-stage3` creates one resumable run directory per
+policy, horizon, and training seed. It trains and selects every checkpoint
+before beginning a separate offline-test pass, preventing accidental use of the
+test split for model selection. The run manifest pins the v3 dataset identity
+and array hashes. H100 defaults are batch size 1,024 and 16 data-loader workers;
+these settings are benchmarked before the primary sweep and remain explicit
+hyperparameters in every saved run configuration.
+
 ### Stage 4: final online evaluation
 
 **When:** After the Stage 3 checkpoints and evaluation protocol are frozen.
