@@ -53,7 +53,7 @@ repeat across seeds. The completed dataset and audit are documented in
 Stage 3 trains three seeds of the BC baseline and each D3PM horizon in
 `H = {1, 2, 4, 8, 16, 32, 64}`. All checkpoint selection finishes on the
 validation split before the runner evaluates any checkpoint on the offline test
-split. Its H100-oriented defaults use batch size 1,024 and 16 loader workers;
+split. Its H100-oriented defaults use batch size 1,024 and eight loader workers;
 both remain command-line parameters.
 
 For a shorter pipeline check before the full run:

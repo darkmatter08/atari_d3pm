@@ -377,7 +377,7 @@ updates, and evaluation seeds. `H` is the intended primary independent variable.
 policy, horizon, and training seed. It trains and selects every checkpoint
 before beginning a separate offline-test pass, preventing accidental use of the
 test split for model selection. The run manifest pins the v3 dataset identity
-and array hashes. H100 defaults are batch size 1,024 and 16 data-loader workers;
+and array hashes. H100 defaults are batch size 1,024 and eight data-loader workers;
 these settings are benchmarked before the primary sweep and remain explicit
 hyperparameters in every saved run configuration.
 

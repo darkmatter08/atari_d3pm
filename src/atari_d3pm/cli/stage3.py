@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--d-model", type=int, default=128)
     parser.add_argument("--n-layers", type=int, default=3)
     parser.add_argument("--n-heads", type=int, default=4)
-    parser.add_argument("--num-workers", type=int, default=16)
+    parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--sample-stride", type=int, default=1)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--force", action="store_true")
