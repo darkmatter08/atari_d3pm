@@ -62,6 +62,8 @@ The completed offline sweep is reported in
 Stage 4 rolls every frozen Stage 3 checkpoint out on 100 previously unused Pong
 seeds and aggregates returns across both evaluation episodes and the three
 training seeds with a hierarchical bootstrap.
+The completed online evaluation is reported in
+[docs/stage4_results.md](docs/stage4_results.md).
 
 For a shorter pipeline check before the full run:
 

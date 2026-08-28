@@ -386,7 +386,8 @@ hyperparameters in every saved run configuration.
 
 ### Stage 4: final online evaluation
 
-**Status:** Implementation complete; evaluation in progress.
+**Status:** Completed on 2026-08-28. See
+[`stage4_results.md`](stage4_results.md).
 
 **When:** After the Stage 3 checkpoints and evaluation protocol are frozen.
 
