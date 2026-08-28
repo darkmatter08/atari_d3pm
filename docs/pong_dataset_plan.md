@@ -275,6 +275,9 @@ a modeling result.
 
 ### Stage 1: Minari seed-dataset pilot
 
+**Status:** Completed on 2026-08-28. See
+[`stage1_results.md`](stage1_results.md).
+
 **When:** After Stage 0 passes and the Minari EDA report has no unresolved data
 or alignment problems.
 

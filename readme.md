@@ -11,7 +11,9 @@
 This fork is being adapted into a vision-conditioned discrete diffusion policy
 for Pong imitation learning. The current dataset design and experiment decisions
 are documented in [docs/pong_dataset_plan.md](docs/pong_dataset_plan.md). The
-first dataset audit is summarized in [docs/pong_eda_v1.md](docs/pong_eda_v1.md).
+first dataset audit is summarized in [docs/pong_eda_v1.md](docs/pong_eda_v1.md),
+and the completed pilot is reported in
+[docs/stage1_results.md](docs/stage1_results.md).
 
 ### Current setup
 
