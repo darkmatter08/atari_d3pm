@@ -19,6 +19,41 @@ not be interpreted as the final chunk-length scaling study.
 The majority-action offline accuracy was 0.2375. The random-policy online mean
 return was -20.25.
 
+## Models compared
+
+Both learned policies condition on the same four consecutive 84x84 grayscale
+frames and use the same three-layer convolutional vision encoder. They differ
+after the vision encoder and are therefore different complete models.
+
+The behavioral-cloning baseline is a direct classifier:
+
+```text
+four frames -> convolutional encoder -> two-layer MLP -> six action logits
+```
+
+It is trained with ordinary cross-entropy on the next expert action and chooses
+an action with one forward pass.
+
+The D3PM policy is a vision-conditioned categorical denoiser:
+
+```text
+four frames + noisy action tokens + diffusion timestep
+    -> convolutional encoder + token/time/position embeddings
+    -> three-layer Transformer -> clean-action logits
+```
+
+It is trained by corrupting expert action chunks at randomly sampled diffusion
+timesteps and predicting the clean chunk with the hybrid D3PM objective. At
+inference it begins with random action tokens and runs a 20-step reverse chain.
+Only the first predicted action is executed before observing and replanning.
+
+For `H=1`, BC and D3PM both ultimately output one action, but D3PM still uses
+the Transformer denoiser, diffusion objective, and 20 network evaluations. It
+cannot exploit temporal structure at this horizon. Consequently, `H=1` is a
+useful control for the cost of diffusion, but it is not an architecture-matched
+comparison. A future non-diffusion Transformer baseline would be needed to
+separate backbone effects from diffusion-objective effects.
+
 ## Results
 
 | Policy | H | Best step | Validation first-action accuracy | Mean return | Median | Range | Win rate | Batched ms / env step |
@@ -46,6 +81,11 @@ benefit from diffusing longer action chunks. D3PM performance is strongest at
 `H=1` and generally weakens as the prediction horizon grows. This is consistent
 with future expert actions becoming less identifiable from only the current
 four-frame observation.
+
+The direct BC result shows that the observations and demonstrations contain
+enough information for successful imitation. Its large advantage over D3PM at
+`H=1` also shows that iterative categorical diffusion is unnecessary for this
+single-action prediction problem under the current setup.
 
 The direct BC policy's perfect online record despite only 43.5% exact held-out
 action agreement also shows that token accuracy and control return can diverge:
