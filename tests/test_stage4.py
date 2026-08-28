@@ -8,6 +8,7 @@ from atari_d3pm.cli.stage4 import (
     _check_unused_seeds,
     aggregate_online_results,
     hierarchical_bootstrap,
+    paired_hierarchical_bootstrap,
 )
 
 
@@ -39,6 +40,15 @@ def test_online_aggregation_uses_training_seeds_as_replicates():
     assert aggregate["mean_return"] == pytest.approx(2.5)
     assert aggregate["between_seed_std_return"] == pytest.approx(0.81649658)
     assert aggregate["mean_inference_ms_per_environment_step"] == 3.0
+
+
+def test_paired_bootstrap_preserves_episode_pairing():
+    baseline = [-2, -1, 0, 1]
+    policies = [[value + 2 for value in baseline] for _ in range(3)]
+    result = paired_hierarchical_bootstrap(policies, baseline, samples=100, seed=3)
+    assert result["mean_return_difference"] == 2.0
+    assert result["mean_return_difference_ci95"] == [2.0, 2.0]
+    assert result["probability_difference_above_zero"] == 1.0
 
 
 def test_stage4_rejects_dataset_collection_seeds(tmp_path):

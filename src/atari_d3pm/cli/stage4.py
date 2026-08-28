@@ -75,8 +75,45 @@ def hierarchical_bootstrap(
     }
 
 
+def paired_hierarchical_bootstrap(
+    returns_by_training_seed: list[list[float]],
+    baseline_returns: list[float],
+    samples: int,
+    seed: int,
+) -> dict:
+    """Bootstrap paired episode-level return differences versus a baseline."""
+    baseline = np.asarray(baseline_returns, dtype=np.float64)
+    arrays = [np.asarray(values, dtype=np.float64) for values in returns_by_training_seed]
+    if any(len(values) != len(baseline) for values in arrays):
+        raise ValueError("Policy and baseline must use the same evaluation seeds")
+    rng = np.random.default_rng(seed)
+    model_count = len(arrays)
+    differences = np.empty(samples, dtype=np.float64)
+    for sample_index in range(samples):
+        selected_models = rng.integers(0, model_count, size=model_count)
+        sampled_differences = []
+        for model_index in selected_models:
+            episode_indices = rng.integers(0, len(baseline), size=len(baseline))
+            sampled_differences.append(
+                arrays[int(model_index)][episode_indices] - baseline[episode_indices]
+            )
+        differences[sample_index] = np.concatenate(sampled_differences).mean()
+    return {
+        "mean_return_difference": float(
+            np.mean([values.mean() for values in arrays]) - baseline.mean()
+        ),
+        "mean_return_difference_ci95": np.quantile(
+            differences, [0.025, 0.975]
+        ).tolist(),
+        "probability_difference_above_zero": float((differences > 0).mean()),
+    }
+
+
 def aggregate_online_results(
-    results: list[dict], bootstrap_samples: int, bootstrap_seed: int
+    results: list[dict],
+    bootstrap_samples: int,
+    bootstrap_seed: int,
+    baseline_returns: list[float] | None = None,
 ) -> list[dict]:
     grouped: dict[tuple[str, int], list[dict]] = defaultdict(list)
     for result in results:
@@ -101,31 +138,37 @@ def aggregate_online_results(
             samples=bootstrap_samples,
             seed=bootstrap_seed + group_index,
         )
-        aggregates.append(
-            {
-                "policy_type": policy_type,
-                "horizon": horizon,
-                "training_seeds": [member["training_seed"] for member in members],
-                "episodes_per_seed": [len(values) for values in returns_by_seed],
-                "per_seed_mean_returns": per_seed_means.tolist(),
-                "mean_return": float(per_seed_means.mean()),
-                "between_seed_std_return": float(per_seed_means.std()),
-                "median_pooled_return": float(np.median(pooled)),
-                "min_return": float(pooled.min()),
-                "max_return": float(pooled.max()),
-                "per_seed_win_rates": per_seed_wins.tolist(),
-                "mean_win_rate": float(per_seed_wins.mean()),
-                "mean_inference_ms_per_environment_step": float(
-                    np.mean(
-                        [
-                            member["online"]["inference_ms_per_environment_step"]
-                            for member in members
-                        ]
-                    )
-                ),
-                "bootstrap": bootstrap,
-            }
-        )
+        aggregate = {
+            "policy_type": policy_type,
+            "horizon": horizon,
+            "training_seeds": [member["training_seed"] for member in members],
+            "episodes_per_seed": [len(values) for values in returns_by_seed],
+            "per_seed_mean_returns": per_seed_means.tolist(),
+            "mean_return": float(per_seed_means.mean()),
+            "between_seed_std_return": float(per_seed_means.std()),
+            "median_pooled_return": float(np.median(pooled)),
+            "min_return": float(pooled.min()),
+            "max_return": float(pooled.max()),
+            "per_seed_win_rates": per_seed_wins.tolist(),
+            "mean_win_rate": float(per_seed_wins.mean()),
+            "mean_inference_ms_per_environment_step": float(
+                np.mean(
+                    [
+                        member["online"]["inference_ms_per_environment_step"]
+                        for member in members
+                    ]
+                )
+            ),
+            "bootstrap": bootstrap,
+        }
+        if baseline_returns is not None:
+            aggregate["random_comparison"] = paired_hierarchical_bootstrap(
+                returns_by_seed,
+                baseline_returns,
+                samples=bootstrap_samples,
+                seed=bootstrap_seed + 1000 + group_index,
+            )
+        aggregates.append(aggregate)
     return sorted(aggregates, key=lambda item: (item["policy_type"], item["horizon"]))
 
 
@@ -305,7 +348,10 @@ def main() -> None:
         "random": {**random_online, "bootstrap": random_bootstrap},
         "results": results,
         "aggregates": aggregate_online_results(
-            results, args.bootstrap_samples, args.bootstrap_seed
+            results,
+            args.bootstrap_samples,
+            args.bootstrap_seed,
+            baseline_returns=random_online["returns"],
         ),
     }
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
