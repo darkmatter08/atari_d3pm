@@ -28,6 +28,7 @@ python3.12 -m venv .venv
 .venv/bin/atari-d3pm-stage1
 .venv/bin/atari-d3pm-stage2
 .venv/bin/atari-d3pm-stage3
+.venv/bin/atari-d3pm-stage4
 ```
 
 The preparation command downloads Minari `atari/pong/expert-v0`, validates and
@@ -57,6 +58,10 @@ split. Its H100-oriented defaults use batch size 1,024 and eight loader workers;
 both remain command-line parameters.
 The completed offline sweep is reported in
 [docs/stage3_results.md](docs/stage3_results.md).
+
+Stage 4 rolls every frozen Stage 3 checkpoint out on 100 previously unused Pong
+seeds and aggregates returns across both evaluation episodes and the three
+training seeds with a hierarchical bootstrap.
 
 For a shorter pipeline check before the full run:
 

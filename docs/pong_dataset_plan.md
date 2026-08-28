@@ -386,6 +386,8 @@ hyperparameters in every saved run configuration.
 
 ### Stage 4: final online evaluation
 
+**Status:** Implementation complete; evaluation in progress.
+
 **When:** After the Stage 3 checkpoints and evaluation protocol are frozen.
 
 **Data:** No offline dataset is used for the primary outcome. Each policy is
@@ -395,6 +397,12 @@ all collection seeds.
 Report mean return, median return, bootstrap confidence intervals, success/win
 rate where appropriate, and inference latency. Aggregate across training seeds;
 do not treat overlapping offline windows as independent experimental replicates.
+
+**Implementation:** `atari-d3pm-stage4` evaluates the 24 frozen checkpoints on
+environment seeds 70000-70099, which are disjoint from the Stage 1, expert
+verification, and dataset-collection ranges. It is resumable per checkpoint.
+Confidence intervals use a hierarchical bootstrap that resamples training seeds
+and then episodes within each selected seed.
 
 ### Optional follow-up ablations
 
