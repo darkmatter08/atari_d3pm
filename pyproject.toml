@@ -21,6 +21,10 @@ data = [
   "matplotlib>=3.8",
   "minari[hf,hdf5]>=0.5",
 ]
+expert = [
+  "flax>=0.10.6,<0.11",
+  "opencv-python-headless>=4.8,<4.12",
+]
 dev = [
   "pytest>=8",
 ]
@@ -29,6 +33,7 @@ dev = [
 atari-d3pm-prepare-pong = "atari_d3pm.cli.prepare_pong:main"
 atari-d3pm-stage0 = "atari_d3pm.cli.stage0:main"
 atari-d3pm-stage1 = "atari_d3pm.cli.stage1:main"
+atari-d3pm-stage2 = "atari_d3pm.cli.stage2:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
