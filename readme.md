@@ -69,6 +69,8 @@ Stage 5 diagnoses trajectory drift, action aliasing, environment-wrapper
 mismatch, and D3PM reverse-chain degradation before testing canonical-action BC,
 one-round DAgger, and a transformer chunk-BC control. Its gated protocol is
 documented in [docs/stage5_protocol.md](docs/stage5_protocol.md).
+The completed diagnostics, remedies, and matched-wrapper controls are reported
+in [docs/stage5_results.md](docs/stage5_results.md).
 
 For a shorter pipeline check before the full run:
 

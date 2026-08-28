@@ -417,8 +417,9 @@ Run these only after the primary sweep:
 
 ### Stage 5: failure diagnosis and targeted remedies
 
-**Status:** Implemented; experiments pending. See
-[`stage5_protocol.md`](stage5_protocol.md).
+**Status:** Completed on 2026-08-28. See
+[`stage5_protocol.md`](stage5_protocol.md) and
+[`stage5_results.md`](stage5_results.md).
 
 Stage 5A diagnoses the Stage 4 offline-online disconnect using synchronized BC
 rollouts, action-alias metrics, an environment-wrapper parity check, and D3PM

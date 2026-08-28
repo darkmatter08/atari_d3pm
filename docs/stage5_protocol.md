@@ -1,5 +1,8 @@
 # Stage 5: failure diagnosis and targeted remedies
 
+**Status:** Completed on 2026-08-28. See
+[`stage5_results.md`](stage5_results.md).
+
 Stage 5 was added after Stage 4 exposed a large offline-online disconnect: the
 three one-step BC checkpoints had nearly identical held-out accuracy, but one
 lost every game while two won every game. It is divided into a diagnostic gate
@@ -75,5 +78,6 @@ under `runs/stage5b/` and are excluded from Git.
 
 ```bash
 atari-d3pm-stage5a --device cuda
-JAX_PLATFORMS=cpu atari-d3pm-stage5b --device cuda --parallel-runs 3
+JAX_PLATFORMS=cpu atari-d3pm-stage5b \
+  --output runs/stage5b_final --num-workers 2 --device cuda --parallel-runs 6
 ```
