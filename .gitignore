@@ -7,3 +7,11 @@ wandb
 run.sh
 *.pyc
 ckpt
+.venv/
+.pytest_cache/
+__pycache__/
+*.egg-info/
+data/pong/
+data/minari/
+reports/
+runs/

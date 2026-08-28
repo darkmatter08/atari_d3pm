@@ -10,7 +10,24 @@
 
 This fork is being adapted into a vision-conditioned discrete diffusion policy
 for Pong imitation learning. The current dataset design and experiment decisions
-are documented in [docs/pong_dataset_plan.md](docs/pong_dataset_plan.md).
+are documented in [docs/pong_dataset_plan.md](docs/pong_dataset_plan.md). The
+first dataset audit is summarized in [docs/pong_eda_v1.md](docs/pong_eda_v1.md).
+
+### Current setup
+
+Use Python 3.10-3.13 (3.12 is tested):
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[data,dev]'
+.venv/bin/atari-d3pm-prepare-pong
+.venv/bin/python -m pytest
+.venv/bin/atari-d3pm-stage0
+```
+
+The preparation command downloads Minari `atari/pong/expert-v0`, validates and
+converts its episodes, and writes EDA to `reports/`. Stage 0 then overfits fixed,
+maximally corrupted batches at `H=1` and `H=16` and verifies reverse sampling.
 
 
 <p align="center">

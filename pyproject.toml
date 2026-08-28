@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atari-d3pm"
+version = "0.1.0"
+description = "Vision-conditioned discrete diffusion policies for Atari Pong"
+readme = "readme.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "numpy>=1.26",
+  "pillow>=10",
+  "torch>=2.2",
+]
+
+[project.optional-dependencies]
+data = [
+  "ale-py>=0.11",
+  "gymnasium[atari]>=1.1",
+  "matplotlib>=3.8",
+  "minari[hf,hdf5]>=0.5",
+]
+dev = [
+  "pytest>=8",
+]
+
+[project.scripts]
+atari-d3pm-prepare-pong = "atari_d3pm.cli.prepare_pong:main"
+atari-d3pm-stage0 = "atari_d3pm.cli.stage0:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

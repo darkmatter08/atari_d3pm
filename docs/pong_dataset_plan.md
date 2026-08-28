@@ -257,10 +257,17 @@ reported from this stage.
 
 **Runs:**
 
-1. Overfit one fixed batch of 256 windows with `H=1`.
-2. Overfit one fixed batch of 256 windows with `H=16`.
+1. Overfit one fixed, maximally corrupted batch of 32 well-spaced windows from
+   one episode with `H=1`.
+2. Overfit the same 32 decision points with `H=16`.
 3. Sample action chunks from both checkpoints and verify shape, action range,
    determinism under a fixed random seed, and completion of the reverse chain.
+
+Maximum corruption makes this a deterministic and demanding check that the
+visual condition can identify the clean actions. The production training
+objective still samples diffusion timesteps uniformly. A 32-window batch keeps
+this a fast CPU smoke test; a larger 256-window memorization run is an optional
+accelerator-backed diagnostic rather than a Stage-0 gate.
 
 **Gate:** Training loss must fall sharply and first-action accuracy on the fixed
 batch must approach 100%. Failure here is treated as an implementation bug, not
