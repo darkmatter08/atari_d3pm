@@ -316,13 +316,13 @@ replanning after every action.
 
 ### Stage 2: controlled expert-rollout dataset
 
-**Status:** Completed on 2026-08-28. See
+**Status:** Corrected stochastic collection completed on 2026-08-28. See
 [`stage2_results.md`](stage2_results.md).
 
 **When:** After the Minari pilot passes.
 
 **Data collection:** Use one verified expert checkpoint with one frozen wrapper
-configuration to create `data/pong/v2`:
+configuration to create `data/pong/v3`:
 
 ```text
 100 training episodes
@@ -330,23 +330,30 @@ configuration to create `data/pong/v2`:
 20 offline test episodes
 ```
 
-These are newly collected episodes with disjoint seeds. `v2` does not silently
+These are newly collected episodes with disjoint environment and policy seeds.
+The stochastic policy RNG is reset from a recorded per-episode seed, so
+collection is reproducible and resumable. `v3` does not silently
 merge the Minari episodes; Minari remains a separately identified pilot source.
 If we later test mixed-source training, that will be an explicit ablation.
 
+The deterministic `v2` collection is retained as an ablation only. It contained
+29 unique trajectories among 130 episodes and exact trajectories crossed the
+train, validation, and test boundaries. The primary `v3` build must pass a 95%
+within-split uniqueness threshold and have zero exact cross-split overlap.
+
 Before student training, evaluate the expert itself on the collection and test
 seeds and record its return distribution. Run the complete EDA suite again on
-`v2` and freeze its manifest and split assignments.
+`v3` and freeze its manifest and split assignments.
 
 ### Stage 3: main horizon sweep
 
-**When:** After `data/pong/v2` is frozen and audited.
+**When:** After `data/pong/v3` is frozen and audited.
 
-**Training data:** The 100 `v2` training episodes only.
+**Training data:** The 100 `v3` training episodes only.
 
-**Checkpoint selection:** Offline metrics on the 10 `v2` validation episodes.
+**Checkpoint selection:** Offline metrics on the 10 `v3` validation episodes.
 
-**Final offline evaluation:** The 20 `v2` test episodes, touched only after
+**Final offline evaluation:** The 20 `v3` test episodes, touched only after
 model and checkpoint-selection decisions are frozen.
 
 **Runs:**

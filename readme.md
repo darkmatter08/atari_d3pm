@@ -42,8 +42,11 @@ reports are intentionally excluded from Git.
 
 Stage 2 downloads and verifies the immutable CleanRL Pong expert, checks its
 return on 20 fixed seeds, and collects the controlled 100/10/20 episode dataset
-at `data/pong/v2`. Collection is resumable at episode boundaries. The completed
-dataset and audit are documented in
+at `data/pong/v3`. Collection is resumable at episode boundaries. The primary
+dataset uses reproducibly sampled expert actions and enforces trajectory
+uniqueness and zero exact overlap between splits. The earlier deterministic
+`v2` dataset is retained only as a debugging ablation because its trajectories
+repeat across seeds. The completed dataset and audit are documented in
 [docs/stage2_results.md](docs/stage2_results.md).
 
 For a shorter pipeline check before the full run:
