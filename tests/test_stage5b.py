@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from atari_d3pm.cli.stage5b import aggregate_families, select_family
+from atari_d3pm.cli.stage5b import (
+    aggregate_families,
+    paired_family_bootstrap,
+    select_family,
+)
 
 
 def _result(family, seed, returns, latency=1.0):
@@ -30,3 +34,11 @@ def test_family_selection_uses_predeclared_latency_tiebreak():
         [_result("slow", 0, [1], 2.0), _result("fast", 0, [1], 1.0)]
     )
     assert select_family(aggregates)["family"] == "fast"
+
+
+def test_paired_family_bootstrap_preserves_both_seed_pairings():
+    baseline = [[-2, -1, 0], [1, 2, 3]]
+    candidate = [[value + 4 for value in values] for values in baseline]
+    result = paired_family_bootstrap(candidate, baseline, samples=100, seed=4)
+    assert result["mean_return_difference"] == 4.0
+    assert result["mean_return_difference_ci95"] == [4.0, 4.0]

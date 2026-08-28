@@ -61,6 +61,12 @@ lexicographic family name. Only the selected family and the original raw BC
 reference are evaluated on the untouched final seeds 90000-90099. A random
 policy is evaluated on those same seeds.
 
+For a valid architecture comparison, the frozen Stage 3 D3PM checkpoints are
+also reevaluated with the collection-matched wrapper on the 20 selection seeds.
+This is a post-selection diagnostic control and cannot retroactively win model
+selection. It corrects the environment mismatch discovered by Stage 5A without
+touching the final 100-seed test set for an unselected family.
+
 This separation ensures that the final 100 episodes are not reused for choosing
 a remedy. Generated recovery data, checkpoints, and rollout results remain
 under `runs/stage5b/` and are excluded from Git.

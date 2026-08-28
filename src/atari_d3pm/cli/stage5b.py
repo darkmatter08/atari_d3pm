@@ -11,7 +11,12 @@ from pathlib import Path
 import numpy as np
 
 from atari_d3pm.cli.stage3 import _train_or_load
-from atari_d3pm.cli.stage4 import _check_unused_seeds, _load_stage3_runs
+from atari_d3pm.cli.stage4 import (
+    _check_unused_seeds,
+    _load_stage3_runs,
+    hierarchical_bootstrap,
+    paired_hierarchical_bootstrap,
+)
 from atari_d3pm.dagger import (
     collect_recovery_episodes,
     finalize_recovery_dataset,
@@ -70,7 +75,9 @@ def select_family(aggregates: list[dict]) -> dict:
     )[0]
 
 
-def aggregate_families(results: list[dict]) -> list[dict]:
+def aggregate_families(
+    results: list[dict], baseline_returns: list[float] | None = None
+) -> list[dict]:
     families = sorted({result["family"] for result in results})
     aggregates = []
     for family in families:
@@ -85,8 +92,8 @@ def aggregate_families(results: list[dict]) -> list[dict]:
             float((np.asarray(member["online"]["returns"]) > 0).mean())
             for member in members
         ]
-        aggregates.append(
-            {
+        returns_by_seed = [member["online"]["returns"] for member in members]
+        aggregate = {
                 "family": family,
                 "training_seeds": [member["training_seed"] for member in members],
                 "per_seed_mean_returns": per_seed_returns,
@@ -102,9 +109,61 @@ def aggregate_families(results: list[dict]) -> list[dict]:
                         ]
                     )
                 ),
+                "bootstrap": hierarchical_bootstrap(
+                    returns_by_seed,
+                    samples=10_000,
+                    seed=10_000 + len(aggregates),
+                ),
             }
-        )
+        if baseline_returns is not None:
+            aggregate["random_comparison"] = paired_hierarchical_bootstrap(
+                returns_by_seed,
+                baseline_returns,
+                samples=10_000,
+                seed=20_000 + len(aggregates),
+            )
+        aggregates.append(aggregate)
     return aggregates
+
+
+def paired_family_bootstrap(
+    candidate_by_seed: list[list[float]],
+    baseline_by_seed: list[list[float]],
+    samples: int = 10_000,
+    seed: int = 0,
+) -> dict:
+    """Paired bootstrap across matching training and environment seeds."""
+    if len(candidate_by_seed) != len(baseline_by_seed) or not candidate_by_seed:
+        raise ValueError("Policy families must have matching training seeds")
+    candidate = [np.asarray(values, dtype=np.float64) for values in candidate_by_seed]
+    baseline = [np.asarray(values, dtype=np.float64) for values in baseline_by_seed]
+    if any(len(left) != len(right) for left, right in zip(candidate, baseline)):
+        raise ValueError("Policy families must have matching evaluation seeds")
+    rng = np.random.default_rng(seed)
+    differences = np.empty(samples, dtype=np.float64)
+    for sample_index in range(samples):
+        selected_seeds = rng.integers(0, len(candidate), size=len(candidate))
+        values = []
+        for seed_index in selected_seeds:
+            episode_indices = rng.integers(
+                0, len(candidate[seed_index]), size=len(candidate[seed_index])
+            )
+            values.append(
+                candidate[seed_index][episode_indices]
+                - baseline[seed_index][episode_indices]
+            )
+        differences[sample_index] = np.concatenate(values).mean()
+    observed = float(
+        np.mean([values.mean() for values in candidate])
+        - np.mean([values.mean() for values in baseline])
+    )
+    return {
+        "mean_return_difference": observed,
+        "mean_return_difference_ci95": np.quantile(
+            differences, [0.025, 0.975]
+        ).tolist(),
+        "probability_difference_above_zero": float((differences > 0).mean()),
+    }
 
 
 def _evaluation_worker(checkpoint: Path, seeds: list[int], device: str, max_steps: int):
@@ -353,6 +412,49 @@ def main() -> None:
     else:
         random_result = json.loads(random_path.read_text())
 
+    # Post-selection diagnostic control: evaluate frozen D3PM checkpoints with
+    # the same wrapper and seeds as direct chunk BC. These runs cannot
+    # retroactively participate in model-family selection.
+    d3pm_control_runs = [
+        {
+            "name": run["name"],
+            "family": f"d3pm_h{run['horizon']}",
+            "training_seed": run["training_seed"],
+            "checkpoint": run["checkpoint"],
+        }
+        for run in stage3_runs
+        if run["policy_type"] == "d3pm"
+    ]
+    d3pm_control_results = evaluate_runs(
+        d3pm_control_runs,
+        args.output / "matched_d3pm",
+        selection_seeds,
+        args.device,
+        args.max_steps,
+        args.parallel_runs,
+        args.force,
+    )
+
+    final_aggregates = aggregate_families(
+        final_results, baseline_returns=random_result["returns"]
+    )
+    ordered_final = sorted(final_results, key=lambda item: item["training_seed"])
+    selected_returns = [
+        item["online"]["returns"]
+        for item in ordered_final
+        if item["family"] == selected["family"]
+    ]
+    raw_returns = [
+        item["online"]["returns"]
+        for item in ordered_final
+        if item["family"] == "raw_bc"
+    ]
+    selected_vs_raw = (
+        paired_family_bootstrap(selected_returns, raw_returns)
+        if selected["family"] != "raw_bc"
+        else None
+    )
+
     summary = {
         "stage": "5B",
         "passed": True,
@@ -371,7 +473,14 @@ def main() -> None:
             "seeds": test_seeds,
             "random": random_result,
             "results": final_results,
-            "aggregates": aggregate_families(final_results),
+            "aggregates": final_aggregates,
+            "selected_vs_raw_bc": selected_vs_raw,
+        },
+        "matched_d3pm_control": {
+            "role": "post-selection diagnostic; not eligible for family selection",
+            "seeds": selection_seeds,
+            "results": d3pm_control_results,
+            "aggregates": aggregate_families(d3pm_control_results),
         },
     }
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
