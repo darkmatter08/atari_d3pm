@@ -347,6 +347,9 @@ seeds and record its return distribution. Run the complete EDA suite again on
 
 ### Stage 3: main horizon sweep
 
+**Status:** Completed on 2026-08-28. See
+[`stage3_results.md`](stage3_results.md).
+
 **When:** After `data/pong/v3` is frozen and audited.
 
 **Training data:** The 100 `v3` training episodes only.

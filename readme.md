@@ -55,6 +55,8 @@ Stage 3 trains three seeds of the BC baseline and each D3PM horizon in
 validation split before the runner evaluates any checkpoint on the offline test
 split. Its H100-oriented defaults use batch size 1,024 and eight loader workers;
 both remain command-line parameters.
+The completed offline sweep is reported in
+[docs/stage3_results.md](docs/stage3_results.md).
 
 For a shorter pipeline check before the full run:
 
