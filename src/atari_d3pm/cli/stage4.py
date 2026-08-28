@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
+import multiprocessing
 from collections import defaultdict
 from pathlib import Path
 
@@ -27,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bootstrap-samples", type=int, default=10_000)
     parser.add_argument("--bootstrap-seed", type=int, default=0)
     parser.add_argument("--include", nargs="+")
+    parser.add_argument("--parallel-runs", type=int, default=3)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
@@ -167,10 +170,27 @@ def _check_unused_seeds(stage3_summary: dict, seeds: list[int]) -> None:
         raise ValueError(f"Online seeds overlap dataset collection: {sorted(overlap)}")
 
 
+def _evaluate_run_worker(
+    checkpoint: Path,
+    seeds: list[int],
+    device: str,
+    max_steps: int,
+) -> dict:
+    """Process-pool entry point for one independent checkpoint rollout."""
+    return evaluate_checkpoint(
+        checkpoint,
+        seeds=seeds,
+        device_name=device,
+        max_steps=max_steps,
+    )
+
+
 def main() -> None:
     args = parse_args()
     if args.episodes < 1 or args.max_steps < 1:
         raise ValueError("episodes and max-steps must be positive")
+    if args.parallel_runs < 1:
+        raise ValueError("parallel-runs must be positive")
     seeds = list(range(args.seed_base, args.seed_base + args.episodes))
     stage3_summary, runs = _load_stage3_runs(args.stage3, args.include)
     _check_unused_seeds(stage3_summary, seeds)
@@ -209,23 +229,61 @@ def main() -> None:
         random_online = evaluate_random_policy(seeds, max_steps=args.max_steps)
         write_rollout_summary(random_path, random_online)
 
-    results = []
+    online_by_name = {}
+    pending = []
     for run in runs:
         path = args.output / f"{run['name']}.json"
         if path.exists() and not args.force:
             online = json.loads(path.read_text())
             if online.get("seeds") != seeds or online.get("max_steps") != args.max_steps:
                 raise RuntimeError(f"Cached online settings differ: {path}")
+            online_by_name[run["name"]] = online
         else:
+            pending.append(run)
+
+    if pending and args.parallel_runs == 1:
+        for run in pending:
             print(f"Evaluating {run['name']} on {len(seeds)} seeds", flush=True)
-            online = evaluate_checkpoint(
-                run["checkpoint"],
-                seeds=seeds,
-                device_name=args.device,
-                max_steps=args.max_steps,
+            online = _evaluate_run_worker(
+                run["checkpoint"], seeds, args.device, args.max_steps
             )
             online["checkpoint_sha256"] = run["checkpoint_sha256"]
+            path = args.output / f"{run['name']}.json"
             write_rollout_summary(path, online)
+            online_by_name[run["name"]] = online
+    elif pending:
+        context = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=args.parallel_runs,
+            mp_context=context,
+        ) as executor:
+            futures = {
+                executor.submit(
+                    _evaluate_run_worker,
+                    run["checkpoint"],
+                    seeds,
+                    args.device,
+                    args.max_steps,
+                ): run
+                for run in pending
+            }
+            print(
+                f"Evaluating {len(pending)} checkpoints with "
+                f"{args.parallel_runs} parallel workers",
+                flush=True,
+            )
+            for future in concurrent.futures.as_completed(futures):
+                run = futures[future]
+                online = future.result()
+                online["checkpoint_sha256"] = run["checkpoint_sha256"]
+                path = args.output / f"{run['name']}.json"
+                write_rollout_summary(path, online)
+                online_by_name[run["name"]] = online
+                print(f"Completed {run['name']}", flush=True)
+
+    results = []
+    for run in runs:
+        online = online_by_name[run["name"]]
         results.append(
             {
                 "name": run["name"],
