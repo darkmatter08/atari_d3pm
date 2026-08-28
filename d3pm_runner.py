@@ -70,6 +70,8 @@ class DummyX0Model(nn.Module):
         self.N = N
 
     def forward(self, x, t, cond) -> torch.Tensor:
+        # What is the shape of x here? Should it be (bs, C, H, W) where C is the number of channels. t is (bs,) and cond is (bs,)?
+        # Why is the output reshaped to (bs, C, H, W, N)? Is this because the model is predicting a distribution over N classes for each pixel in the image?
         x = (2 * x.float() / self.N) - 1.0
         t = t.float().reshape(-1, 1) / 1000
         t_features = [torch.sin(t * 3.1415 * 2**i) for i in range(16)] + [
@@ -198,6 +200,8 @@ class D3PM(nn.Module):
         return a[t - 1, x, :]
 
     def q_posterior_logits(self, x_0, x_t, t):
+        # This is Eq (3).
+        # q(x_t−1|x_t, x_0)
         # if t == 1, this means we return the L_0 loss, so directly try to x_0 logits.
         # otherwise, we return the L_{t-1} loss.
         # Also, we never have t == 0.
@@ -247,6 +251,8 @@ class D3PM(nn.Module):
         return out.sum(dim=-1).mean()
 
     def q_sample(self, x_0, t, noise):
+        # q(x_t|x_0) = Cat(x_t; p=x_0 @ Qbar_t), with Qbar_t = Q_1 Q_2...Q_t
+        # Gumbel is used to sample from the computed distribution over x_t
         # forward process, x_0 is the clean input.
         logits = torch.log(self._at(self.q_mats, t, x_0) + self.eps)
         noise = torch.clip(noise, self.eps, 1.0)
@@ -297,6 +303,7 @@ class D3PM(nn.Module):
         }
 
     def p_sample(self, x, t, cond, noise):
+        # p_θ(x_{t−1}|x_{t})
 
         predicted_x0_logits = self.model_predict(x, t, cond)
         pred_q_posterior_logits = self.q_posterior_logits(predicted_x0_logits, x, t)

@@ -6,6 +6,12 @@
 
 # Minimal Implementation of a D3PM (Structured Denoising Diffusion Models in Discrete State-Spaces), in pytorch
 
+## Atari/Pong extension
+
+This fork is being adapted into a vision-conditioned discrete diffusion policy
+for Pong imitation learning. The current dataset design and experiment decisions
+are documented in [docs/pong_dataset_plan.md](docs/pong_dataset_plan.md).
+
 
 <p align="center">
   <img src="contents/best.gif" alt="small" width="400">
