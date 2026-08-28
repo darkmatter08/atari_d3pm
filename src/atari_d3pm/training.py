@@ -124,6 +124,11 @@ def _loader(
     generator = torch.Generator().manual_seed(config.seed)
     if persistent_workers is None:
         persistent_workers = shuffle
+    # Stage 5 may load the multithreaded JAX expert before training. Forking
+    # workers afterward is unsafe, so use clean spawned processes there.
+    multiprocessing_context = (
+        "spawn" if config.num_workers > 0 and config.checkpoint_stage >= 5 else None
+    )
     return DataLoader(
         dataset,
         batch_size=config.batch_size,
@@ -133,6 +138,7 @@ def _loader(
         persistent_workers=config.num_workers > 0 and persistent_workers,
         drop_last=shuffle,
         generator=generator,
+        multiprocessing_context=multiprocessing_context,
     )
 
 

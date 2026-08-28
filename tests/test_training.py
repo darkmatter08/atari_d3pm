@@ -52,6 +52,16 @@ def test_only_training_loader_keeps_workers_persistent(tmp_path):
     assert _loader(dataset, config, shuffle=False).persistent_workers is False
 
 
+def test_stage5_loader_uses_spawn_after_jax_expert_loading(tmp_path):
+    _write_tiny_dataset(tmp_path)
+    dataset = PongActionChunkDataset(tmp_path, split="train", horizon=1)
+    config = TrainConfig(
+        policy_type="bc", horizon=1, num_workers=1, batch_size=2,
+        checkpoint_stage=5,
+    )
+    assert _loader(dataset, config, shuffle=True).multiprocessing_context.get_start_method() == "spawn"
+
+
 def test_behavior_cloning_training_saves_loadable_checkpoint(tmp_path):
     data_root = tmp_path / "data"
     output = tmp_path / "run"
