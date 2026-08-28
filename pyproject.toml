@@ -36,6 +36,8 @@ atari-d3pm-stage1 = "atari_d3pm.cli.stage1:main"
 atari-d3pm-stage2 = "atari_d3pm.cli.stage2:main"
 atari-d3pm-stage3 = "atari_d3pm.cli.stage3:main"
 atari-d3pm-stage4 = "atari_d3pm.cli.stage4:main"
+atari-d3pm-stage5a = "atari_d3pm.cli.stage5a:main"
+atari-d3pm-stage5b = "atari_d3pm.cli.stage5b:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

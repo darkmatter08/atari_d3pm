@@ -49,6 +49,44 @@ class PongBehaviorCloner(nn.Module):
         return self.head(self.vision(frames))
 
 
+class PongChunkBehaviorCloner(nn.Module):
+    """Direct non-diffusion action-chunk predictor matched to the D3PM trunk."""
+
+    def __init__(
+        self,
+        horizon: int,
+        num_actions: int = 6,
+        frame_stack: int = 4,
+        d_model: int = 128,
+        n_layers: int = 3,
+        n_heads: int = 4,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if d_model % n_heads:
+            raise ValueError("d_model must be divisible by n_heads")
+        self.horizon = horizon
+        self.vision = PongVisionEncoder(frame_stack=frame_stack, d_model=d_model)
+        self.position_embedding = nn.Parameter(torch.randn(1, horizon, d_model) * 0.02)
+        layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=n_heads,
+            dim_feedforward=4 * d_model,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=False,
+        )
+        self.transformer = nn.TransformerEncoder(layer, num_layers=n_layers)
+        self.final_norm = nn.LayerNorm(d_model)
+        self.output = nn.Linear(d_model, num_actions)
+
+    def forward(self, frames: torch.Tensor) -> torch.Tensor:
+        vision = self.vision(frames).unsqueeze(1)
+        tokens = vision + self.position_embedding
+        return self.output(self.final_norm(self.transformer(tokens)))
+
+
 class PongActionDenoiser(nn.Module):
     """Predict clean action tokens from noisy tokens and a frame stack."""
 

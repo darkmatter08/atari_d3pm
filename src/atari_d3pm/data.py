@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 import numpy as np
 import torch
@@ -21,6 +21,39 @@ PONG_ACTION_MEANINGS = [
     "RIGHTFIRE",
     "LEFTFIRE",
 ]
+
+ActionVocabulary = Literal["raw6", "canonical4"]
+
+# RIGHTFIRE and LEFTFIRE have the same paddle motion as RIGHT and LEFT once a
+# rally has started. Keep FIRE separate so a policy can still start a game.
+_CANONICAL4_ENCODE = np.asarray([0, 1, 2, 3, 2, 3], dtype=np.int64)
+_CANONICAL4_DECODE = np.asarray([0, 1, 2, 3], dtype=np.int64)
+
+
+def action_vocabulary_size(vocabulary: ActionVocabulary) -> int:
+    if vocabulary == "raw6":
+        return 6
+    if vocabulary == "canonical4":
+        return 4
+    raise ValueError(f"Unknown action vocabulary: {vocabulary}")
+
+
+def encode_actions(actions: np.ndarray, vocabulary: ActionVocabulary) -> np.ndarray:
+    actions = np.asarray(actions, dtype=np.int64)
+    if vocabulary == "raw6":
+        return actions
+    if vocabulary == "canonical4":
+        return _CANONICAL4_ENCODE[actions]
+    raise ValueError(f"Unknown action vocabulary: {vocabulary}")
+
+
+def decode_actions(actions: np.ndarray, vocabulary: ActionVocabulary) -> np.ndarray:
+    actions = np.asarray(actions, dtype=np.int64)
+    if vocabulary == "raw6":
+        return actions
+    if vocabulary == "canonical4":
+        return _CANONICAL4_DECODE[actions]
+    raise ValueError(f"Unknown action vocabulary: {vocabulary}")
 
 
 def return_stratified_split(
@@ -215,12 +248,15 @@ class PongActionChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         horizon: int = 1,
         frame_stack: int = 4,
         sample_stride: int = 1,
+        action_vocabulary: ActionVocabulary = "raw6",
     ) -> None:
         if horizon < 1 or frame_stack < 1 or sample_stride < 1:
             raise ValueError("horizon, frame_stack, and sample_stride must be positive")
         self.root = Path(root)
         self.horizon = horizon
         self.frame_stack = frame_stack
+        action_vocabulary_size(action_vocabulary)
+        self.action_vocabulary = action_vocabulary
         self.frames = np.load(self.root / "frames.npy", mmap_mode="r")
         self.actions = np.load(self.root / "actions.npy", mmap_mode="r")
         self.offsets = np.load(self.root / "episode_offsets.npy")
@@ -246,5 +282,8 @@ class PongActionChunkDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         first_context = decision_index - self.frame_stack + 1
         frame_indices = [max(episode_start, index) for index in range(first_context, decision_index + 1)]
         frames = np.asarray(self.frames[frame_indices]).copy()
-        actions = np.asarray(self.actions[decision_index : decision_index + self.horizon]).copy()
+        raw_actions = np.asarray(
+            self.actions[decision_index : decision_index + self.horizon]
+        ).copy()
+        actions = encode_actions(raw_actions, self.action_vocabulary)
         return torch.from_numpy(frames), torch.from_numpy(actions.astype(np.int64))

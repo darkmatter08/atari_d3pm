@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import torch
 
-from atari_d3pm.model import PongActionDenoiser, PongBehaviorCloner
+from atari_d3pm.model import (
+    PongActionDenoiser,
+    PongBehaviorCloner,
+    PongChunkBehaviorCloner,
+)
 
 
 def test_model_emits_action_logits_for_each_chunk_position():
@@ -22,4 +26,14 @@ def test_behavior_cloner_emits_one_action_distribution():
     frames = torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8)
     logits = model(frames)
     assert logits.shape == (2, 6)
+    assert torch.isfinite(logits).all()
+
+
+def test_chunk_behavior_cloner_emits_one_distribution_per_position():
+    model = PongChunkBehaviorCloner(
+        horizon=4, num_actions=4, d_model=32, n_layers=1, n_heads=4
+    )
+    frames = torch.randint(0, 256, (2, 4, 84, 84), dtype=torch.uint8)
+    logits = model(frames)
+    assert logits.shape == (2, 4, 4)
     assert torch.isfinite(logits).all()

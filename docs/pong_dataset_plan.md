@@ -415,6 +415,18 @@ Run these only after the primary sweep:
 - Minari-only, fresh-rollout-only, and explicitly mixed-source training;
 - dataset-size scaling using fixed subsets of the 100 training episodes.
 
+### Stage 5: failure diagnosis and targeted remedies
+
+**Status:** Implemented; experiments pending. See
+[`stage5_protocol.md`](stage5_protocol.md).
+
+Stage 5A diagnoses the Stage 4 offline-online disconnect using synchronized BC
+rollouts, action-alias metrics, an environment-wrapper parity check, and D3PM
+reverse-chain traces. Stage 5B then runs the supported canonical-action and
+DAgger remedies plus an architecture-matched direct chunk-BC control. Model
+families are selected on a fixed 20-seed online validation set before a single
+evaluation on 100 untouched final seeds.
+
 ## Implementation order
 
 1. Add dependency/configuration files and data directories to `.gitignore`.

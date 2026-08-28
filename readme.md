@@ -65,6 +65,11 @@ training seeds with a hierarchical bootstrap.
 The completed online evaluation is reported in
 [docs/stage4_results.md](docs/stage4_results.md).
 
+Stage 5 diagnoses trajectory drift, action aliasing, environment-wrapper
+mismatch, and D3PM reverse-chain degradation before testing canonical-action BC,
+one-round DAgger, and a transformer chunk-BC control. Its gated protocol is
+documented in [docs/stage5_protocol.md](docs/stage5_protocol.md).
+
 For a shorter pipeline check before the full run:
 
 ```bash

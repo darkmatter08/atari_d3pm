@@ -34,6 +34,14 @@ def test_train_config_rejects_non_one_step_bc():
         TrainConfig(policy_type="bc", horizon=4)
 
 
+def test_chunk_bc_allows_long_horizons_and_canonical_actions():
+    config = TrainConfig(
+        policy_type="chunk_bc", horizon=8, action_vocabulary="canonical4"
+    )
+    assert config.horizon == 8
+    assert config.action_vocabulary == "canonical4"
+
+
 def test_only_training_loader_keeps_workers_persistent(tmp_path):
     _write_tiny_dataset(tmp_path)
     dataset = PongActionChunkDataset(tmp_path, split="train", horizon=1)

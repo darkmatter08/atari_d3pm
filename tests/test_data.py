@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from atari_d3pm.data import PongActionChunkDataset, return_stratified_split
+from atari_d3pm.data import (
+    PongActionChunkDataset,
+    decode_actions,
+    encode_actions,
+    return_stratified_split,
+)
 
 
 def test_return_stratified_split_represents_both_modes():
@@ -50,3 +55,13 @@ def test_sample_stride_is_independent_of_horizon(processed_dataset):
         processed_dataset, split="train", horizon=2, sample_stride=4
     )
     assert [index for index, _ in dataset.indices] == [0, 4, 8, 12, 16]
+
+
+def test_canonical_action_vocabulary_merges_fire_motion_aliases(processed_dataset):
+    raw = np.arange(6)
+    assert encode_actions(raw, "canonical4").tolist() == [0, 1, 2, 3, 2, 3]
+    assert decode_actions(np.arange(4), "canonical4").tolist() == [0, 1, 2, 3]
+    dataset = PongActionChunkDataset(
+        processed_dataset, split="train", horizon=6, action_vocabulary="canonical4"
+    )
+    assert dataset[0][1].tolist() == [0, 1, 2, 3, 2, 3]

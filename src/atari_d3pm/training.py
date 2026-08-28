@@ -12,14 +12,14 @@ from typing import Literal
 import numpy as np
 import torch
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 
-from .data import PongActionChunkDataset
+from .data import ActionVocabulary, PongActionChunkDataset, action_vocabulary_size
 from .diffusion import D3PM
-from .model import PongActionDenoiser, PongBehaviorCloner
+from .model import PongActionDenoiser, PongBehaviorCloner, PongChunkBehaviorCloner
 
 
-PolicyType = Literal["bc", "d3pm"]
+PolicyType = Literal["bc", "chunk_bc", "d3pm"]
 
 
 @dataclass(frozen=True)
@@ -43,12 +43,17 @@ class TrainConfig:
     checkpoint_stage: int = 1
     seed: int = 0
     device: str = "auto"
+    action_vocabulary: ActionVocabulary = "raw6"
+    recovery_data_root: str | None = None
 
     def __post_init__(self) -> None:
         if self.horizon < 1:
             raise ValueError("horizon must be positive")
         if self.policy_type == "bc" and self.horizon != 1:
-            raise ValueError("The Stage-1 behavioral-cloning baseline must use H=1")
+            raise ValueError("The one-step behavioral-cloning baseline must use H=1")
+        if self.policy_type not in {"bc", "chunk_bc", "d3pm"}:
+            raise ValueError(f"Unknown policy type: {self.policy_type}")
+        action_vocabulary_size(self.action_vocabulary)
         if self.train_steps < 1 or self.validation_every < 1:
             raise ValueError("train_steps and validation_every must be positive")
         if self.batch_size < 1 or self.num_workers < 0:
@@ -78,11 +83,24 @@ def seed_everything(seed: int) -> None:
 
 
 def build_policy(config: TrainConfig, device: torch.device):
+    num_actions = action_vocabulary_size(config.action_vocabulary)
     if config.policy_type == "bc":
-        model = PongBehaviorCloner(d_model=config.d_model).to(device)
+        model = PongBehaviorCloner(
+            num_actions=num_actions, d_model=config.d_model
+        ).to(device)
+        return model, None
+    if config.policy_type == "chunk_bc":
+        model = PongChunkBehaviorCloner(
+            horizon=config.horizon,
+            num_actions=num_actions,
+            d_model=config.d_model,
+            n_layers=config.n_layers,
+            n_heads=config.n_heads,
+        ).to(device)
         return model, None
     model = PongActionDenoiser(
         horizon=config.horizon,
+        num_actions=num_actions,
         diffusion_steps=config.diffusion_steps,
         d_model=config.d_model,
         n_layers=config.n_layers,
@@ -91,7 +109,7 @@ def build_policy(config: TrainConfig, device: torch.device):
     diffusion = D3PM(
         model,
         n_steps=config.diffusion_steps,
-        num_classes=6,
+        num_classes=num_actions,
         hybrid_loss_coeff=1e-3,
     ).to(device)
     return model, diffusion
@@ -153,13 +171,22 @@ def validate(
         if max_batches is not None and batch_index >= max_batches:
             break
         frames, actions = _move_batch(batch, device)
-        if config.policy_type == "bc":
+        if config.policy_type in {"bc", "chunk_bc"}:
             logits = model(frames)
-            targets = actions[:, 0]
-            total_ce += float(F.cross_entropy(logits, targets, reduction="sum").cpu())
+            if config.policy_type == "bc":
+                logits = logits.unsqueeze(1)
+            total_ce += float(
+                F.cross_entropy(
+                    logits.flatten(0, -2), actions.flatten(), reduction="sum"
+                ).cpu()
+            )
             predictions = logits.argmax(dim=-1)
-            denoise_first_correct += int((predictions == targets).sum().cpu())
-            total_first += len(targets)
+            denoise_correct += int((predictions == actions).sum().cpu())
+            denoise_first_correct += int(
+                (predictions[:, 0] == actions[:, 0]).sum().cpu()
+            )
+            total_tokens += actions.numel()
+            total_first += len(actions)
             continue
 
         assert diffusion is not None
@@ -197,9 +224,10 @@ def validate(
         total_tokens += actions.numel()
         total_first += batch_size
 
-    if config.policy_type == "bc":
+    if config.policy_type in {"bc", "chunk_bc"}:
         return {
-            "ce": total_ce / total_first,
+            "ce": total_ce / total_tokens,
+            "token_accuracy": denoise_correct / total_tokens,
             "first_action_accuracy": denoise_first_correct / total_first,
             "evaluated_windows": total_first,
         }
@@ -214,7 +242,7 @@ def validate(
 
 
 def checkpoint_score(metrics: dict[str, float], policy_type: PolicyType) -> float:
-    if policy_type == "bc":
+    if policy_type in {"bc", "chunk_bc"}:
         return metrics["first_action_accuracy"]
     return metrics["sample_first_action_accuracy"]
 
@@ -250,17 +278,32 @@ def train_policy(config: TrainConfig) -> dict:
     metrics_path = output / "metrics.jsonl"
     metrics_path.unlink(missing_ok=True)
 
-    train_data = PongActionChunkDataset(
+    primary_train_data = PongActionChunkDataset(
         config.data_root,
         split="train",
         horizon=config.horizon,
         sample_stride=config.sample_stride,
+        action_vocabulary=config.action_vocabulary,
     )
+    if config.recovery_data_root is None:
+        train_data = primary_train_data
+    else:
+        if config.horizon != 1:
+            raise ValueError("Counterfactual DAgger labels are valid only for H=1")
+        recovery_data = PongActionChunkDataset(
+            config.recovery_data_root,
+            split="train",
+            horizon=1,
+            sample_stride=config.sample_stride,
+            action_vocabulary=config.action_vocabulary,
+        )
+        train_data = ConcatDataset([primary_train_data, recovery_data])
     validation_data = PongActionChunkDataset(
         config.data_root,
         split="validation",
         horizon=config.horizon,
         sample_stride=config.sample_stride,
+        action_vocabulary=config.action_vocabulary,
     )
     train_loader = _loader(train_data, config, shuffle=True)
     validation_loader = _loader(validation_data, config, shuffle=False)
@@ -291,9 +334,11 @@ def train_policy(config: TrainConfig) -> dict:
             dtype=torch.bfloat16,
             enabled=use_amp,
         ):
-            if config.policy_type == "bc":
+            if config.policy_type in {"bc", "chunk_bc"}:
                 logits = model(frames)
-                loss = F.cross_entropy(logits, actions[:, 0])
+                if config.policy_type == "bc":
+                    logits = logits.unsqueeze(1)
+                loss = F.cross_entropy(logits.flatten(0, -2), actions.flatten())
             else:
                 assert diffusion is not None
                 loss, _ = diffusion.loss(actions, frames)
@@ -368,6 +413,7 @@ def evaluate_checkpoint_offline(
         split=split,
         horizon=config.horizon,
         sample_stride=config.sample_stride,
+        action_vocabulary=config.action_vocabulary,
     )
     loader = _loader(dataset, config, shuffle=False)
     metrics = validate(

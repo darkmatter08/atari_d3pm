@@ -77,6 +77,17 @@ expert-action accuracy does not identify whether a learned Pong policy is
 closed-loop stable. Small differences in which redundant actions a model learns
 can compound into either perfect play or complete failure.
 
+Our leading interpretation is trajectory drift caused by closed-loop covariate
+shift, not conventional supervised overfitting. BC is trained and validated on
+states visited by the expert, but at evaluation time it controls which states it
+will observe next. A small early action error can move the policy onto a state
+trajectory that is rare or absent in the expert dataset; predictions on those
+states can then become less reliable and compound the deviation. This explains
+how checkpoints with nearly indistinguishable held-out accuracy can have
+opposite returns. It remains a hypothesis until a trace-level diagnostic locates
+the first action divergence and measures how quickly the resulting observations
+depart from the expert and successful-policy distributions.
+
 The current evidence does not support a benefit from discrete diffusion over
 action chunks for this setup. The next useful experiments would target the
 failure mechanism rather than extend the same horizon sweep: canonicalize
